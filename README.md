@@ -1,5 +1,7 @@
 # WAF Red-Team / Blue-Team Agentic Sandbox
 
+Live link - https://project01-amber-ten.vercel.app/
+
 A multi-agent sandbox where an **attacker** LLM agent evolves HTTP-level attacks (SQLi, XSS,
 credential stuffing, encoding-based evasion) against a small sample app, and a **defender** LLM
 agent watches AWS-WAF-realistic sampled logs and metrics and authors real **AWS WAFv2-schema**
