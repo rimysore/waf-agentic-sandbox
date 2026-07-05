@@ -1,0 +1,23 @@
+# Scenario configuration for the WAF red-team/blue-team sandbox.
+rounds:
+  max_rounds: 20
+  convergence_rounds_required: 3   # consecutive rounds at 0% attack success + FP under threshold to stop early
+
+budget:
+  wcu_max_capacity: 250
+
+thresholds:
+  false_positive_rate_max: 0.01    # 1% -- rule promotion is rejected above this
+
+traffic:
+  attacker_requests_per_round: 20
+  legit_requests_per_round: 40
+  rng_seed: 1337
+
+llm:
+  backend: ollama         # ollama | fake
+  ollama_model: llama3.2
+  ollama_host: http://localhost:11434
+
+persistence:
+  db_path: data/run.db

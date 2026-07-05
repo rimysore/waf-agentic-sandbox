@@ -1,0 +1,35 @@
+# Optional, nice-to-have containerized path -- nothing in this project
+# requires Docker to run or demo. `docker compose up ollama` then
+# `docker compose run --rm sandbox` then `docker compose up dashboard`,
+# or just `docker compose up` to run all three (sandbox runs once and exits;
+# re-run it with `docker compose run --rm sandbox` for another round of demo).
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+  sandbox:
+    build: .
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./data:/app/data
+    command: ["python", "-m", "src.cli", "demo", "--rounds", "15", "--db", "data/run.db"]
+
+  dashboard:
+    build: .
+    depends_on:
+      - ollama
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./data:/app/data
+    command: ["python", "-m", "src.dashboard.server", "--db", "data/run.db", "--port", "8050"]
+
+volumes:
+  ollama_models:

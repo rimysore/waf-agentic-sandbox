@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WAF Red-Team / Blue-Team Sandbox</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #12161f; --panel-2: #171c27; --border: #262c3a;
+    --text: #e6e9f0; --muted: #8b93a7; --accent: #4f8cff; --good: #35c46b;
+    --bad: #ef5866; --warn: #f0a93b; --mono: "SFMono-Regular", Consolas, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f5f6f9; --panel:#ffffff; --panel-2:#f0f1f5; --border:#e1e4ea; --text:#1a1d24; --muted:#5c6270; }
+  }
+  :root[data-theme="light"] { --bg:#f5f6f9; --panel:#ffffff; --panel-2:#f0f1f5; --border:#e1e4ea; --text:#1a1d24; --muted:#5c6270; }
+  :root[data-theme="dark"]  { --bg:#0b0e14; --panel:#12161f; --panel-2:#171c27; --border:#262c3a; --text:#e6e9f0; --muted:#8b93a7; }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .wrap { max-width:1200px; margin:0 auto; padding:20px 24px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .subtitle { color:var(--muted); font-size:13px; margin-bottom:18px; }
+
+  .controls { display:flex; align-items:center; gap:16px; background:var(--panel); border:1px solid var(--border);
+              border-radius:10px; padding:12px 16px; margin-bottom:18px; flex-wrap:wrap; }
+  .controls label { font-size:13px; color:var(--muted); }
+  input[type="range"] { width:220px; }
+  .badge { font-family:var(--mono); font-size:12px; padding:2px 8px; border-radius:6px; background:var(--panel-2); border:1px solid var(--border); }
+
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:18px; }
+  .tile { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .tile .label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .tile .value { font-size:28px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .tile .value.good { color:var(--good); }
+  .tile .value.bad { color:var(--bad); }
+  .tile .value.warn { color:var(--warn); }
+
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .chart-box { position:relative; height:220px; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+  td.wrap-cell { white-space:normal; }
+  .scroll { max-height:280px; overflow:auto; }
+
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
+  pre.logs { font-family:var(--mono); font-size:11.5px; line-height:1.5; max-height:320px; overflow:auto; margin:0;
+             white-space:pre-wrap; word-break:break-word; }
+  .log-line.BLOCK { color:var(--bad); }
+  .log-line.ALLOW { color:var(--muted); }
+  .log-line.COUNT { color:var(--warn); }
+
+  .event-staged { color:var(--muted); }
+  .event-promoted { color:var(--good); }
+  .event-rolled_back, .event-auto_rollback { color:var(--warn); }
+  .event-retired { color:var(--bad); }
+
+  @media (max-width: 800px) { .charts, .two-col { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>WAF Red-Team / Blue-Team Sandbox</h1>
+  <div class="subtitle">Attacker vs. defender agents converging on an AWS WAFv2-shaped ruleset. Live-poll or golden-run replay -- same run.db either way.</div>
+
+  <div class="controls">
+    <label>Round <input id="roundSlider" type="range" min="1" max="1" value="1" /> <span id="roundLabel" class="badge">1 / 1</span></label>
+    <label><input id="autoRefresh" type="checkbox" checked /> Auto-refresh</label>
+    <span id="dbStatus" class="badge">loading&hellip;</span>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Attack Success Rate</div><div class="value" id="tileSuccess">--</div></div>
+    <div class="tile"><div class="label">False Positive Rate</div><div class="value" id="tileFp">--</div></div>
+    <div class="tile"><div class="label">WCU Used / Budget</div><div class="value" id="tileWcu">--</div></div>
+    <div class="tile"><div class="label">Rule Changes (round)</div><div class="value" id="tileChanges">--</div></div>
+  </div>
+
+  <div class="charts">
+    <div class="panel"><h2>Attack success rate over rounds</h2><div class="chart-box"><canvas id="successChart"></canvas></div></div>
+    <div class="panel"><h2>False positive rate over rounds</h2><div class="chart-box"><canvas id="fpChart"></canvas></div></div>
+  </div>
+  <div class="charts">
+    <div class="panel"><h2>WCU capacity used vs. budget</h2><div class="chart-box"><canvas id="wcuChart"></canvas></div></div>
+    <div class="panel"><h2>Per-rule outcomes (selected round)</h2>
+      <div class="scroll">
+        <table id="ruleTable"><thead><tr><th>Rule</th><th>Allowed</th><th>Blocked</th><th>Counted</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px;">
+    <h2>Rule change timeline</h2>
+    <div class="scroll">
+      <table id="timelineTable">
+        <thead><tr><th>Round</th><th>Event</th><th>Rule</th><th>Detail</th><th>Justification</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <h2>Sampled request log (selected round, most recent first)</h2>
+      <pre class="logs" id="logTail"></pre>
+    </div>
+    <div class="panel">
+      <h2>Agent notes (selected round)</h2>
+      <div style="font-size:13px;"><b>Attacker:</b> <span id="attackerNote" style="color:var(--muted);"></span></div>
+      <div style="font-size:13px; margin-top:8px;"><b>Defender:</b> <span id="defenderNote" style="color:var(--muted);"></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = { rounds: [], ruleChanges: [], metrics: [], selectedRound: 1 };
+let successChart, fpChart, wcuChart;
+
+function pct(x) { return (x * 100).toFixed(1) + "%"; }
+
+function initCharts() {
+  const commonOpts = {
+    responsive: true, maintainAspectRatio: false,
+    scales: { x: { ticks: { color: "#8b93a7" }, grid: { color: "rgba(128,128,128,.15)" } },
+              y: { ticks: { color: "#8b93a7" }, grid: { color: "rgba(128,128,128,.15)" } } },
+    plugins: { legend: { labels: { color: "#8b93a7" } } },
+  };
+  successChart = new Chart(document.getElementById("successChart"), {
+    type: "line", data: { labels: [], datasets: [{ label: "attack success %", data: [], borderColor: "#ef5866", tension: .25 }] },
+    options: commonOpts,
+  });
+  fpChart = new Chart(document.getElementById("fpChart"), {
+    type: "line", data: { labels: [], datasets: [{ label: "FP %", data: [], borderColor: "#f0a93b", tension: .25 }] },
+    options: commonOpts,
+  });
+  wcuChart = new Chart(document.getElementById("wcuChart"), {
+    type: "line", data: { labels: [], datasets: [{ label: "WCU used", data: [], borderColor: "#4f8cff", tension: .25 }] },
+    options: commonOpts,
+  });
+}
+
+async function fetchJson(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+function updateCharts() {
+  const labels = state.rounds.map(r => r.round_num);
+  successChart.data.labels = labels;
+  successChart.data.datasets[0].data = state.rounds.map(r => (r.attack_success_rate || 0) * 100);
+  successChart.update();
+  fpChart.data.labels = labels;
+  fpChart.data.datasets[0].data = state.rounds.map(r => (r.fp_rate || 0) * 100);
+  fpChart.update();
+  wcuChart.data.labels = labels;
+  wcuChart.data.datasets[0].data = state.rounds.map(r => r.wcu_used || 0);
+  wcuChart.update();
+}
+
+function updateTimeline() {
+  const tbody = document.querySelector("#timelineTable tbody");
+  tbody.innerHTML = "";
+  for (const c of state.ruleChanges) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${c.round_num}</td><td class="event-${c.event_type}">${c.event_type}</td>
+      <td>${c.rule_name}</td><td class="wrap-cell">${c.detail_json}</td><td class="wrap-cell">${c.justification || ""}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function updateForSelectedRound() {
+  const round = state.selectedRound;
+  const roundRow = state.rounds.find(r => r.round_num === round);
+
+  document.getElementById("tileSuccess").textContent = roundRow ? pct(roundRow.attack_success_rate) : "--";
+  document.getElementById("tileSuccess").className = "value " + (roundRow && roundRow.attack_success_rate > 0 ? "bad" : "good");
+  document.getElementById("tileFp").textContent = roundRow ? pct(roundRow.fp_rate) : "--";
+  document.getElementById("tileFp").className = "value " + (roundRow && roundRow.fp_rate > 0.01 ? "bad" : "good");
+
+  const changesThisRound = state.ruleChanges.filter(c => c.round_num === round);
+  document.getElementById("tileChanges").textContent = changesThisRound.length;
+
+  try {
+    const acl = await fetchJson(`/api/web_acl?round=${round}`);
+    if (acl && acl.max_capacity_wcu) {
+      document.getElementById("tileWcu").textContent = `${roundRow ? roundRow.wcu_used : "?"} / ${acl.max_capacity_wcu}`;
+    }
+  } catch (e) { /* no snapshot yet for this round */ }
+
+  const ruleTbody = document.querySelector("#ruleTable tbody");
+  ruleTbody.innerHTML = "";
+  const rowsForRound = state.metrics.filter(m => m.round_num === round);
+  for (const m of rowsForRound) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${m.rule_name}</td><td>${m.allowed}</td><td>${m.blocked}</td><td>${m.counted}</td>`;
+    ruleTbody.appendChild(tr);
+  }
+
+  try {
+    const logs = await fetchJson(`/api/sampled_logs?round=${round}&limit=40`);
+    const logEl = document.getElementById("logTail");
+    logEl.innerHTML = logs.map(l => {
+      const cls = l.action || "ALLOW";
+      const ip = l.httpRequest ? l.httpRequest.clientIp : "?";
+      const uri = l.httpRequest ? l.httpRequest.uri : "?";
+      return `<span class="log-line ${cls}">[${cls}] ${ip} ${l.httpRequest ? l.httpRequest.httpMethod : ""} ${uri} -> ${l.terminatingRuleId}</span>`;
+    }).join("\n");
+  } catch (e) { document.getElementById("logTail").textContent = "(no logs for this round)"; }
+
+  try {
+    const am = await fetchJson(`/api/attacker_memory?round=${round}`);
+    document.getElementById("attackerNote").textContent = am.next_round_hypothesis || JSON.stringify(am);
+  } catch (e) {}
+  try {
+    const dm = await fetchJson(`/api/defender_memory?round=${round}`);
+    document.getElementById("defenderNote").textContent = (dm.notes || "").slice(0, 300);
+  } catch (e) {}
+}
+
+async function refresh() {
+  try {
+    state.rounds = await fetchJson("/api/rounds");
+    state.ruleChanges = await fetchJson("/api/rule_changes");
+    state.metrics = await fetchJson("/api/metrics");
+    document.getElementById("dbStatus").textContent = `${state.rounds.length} round(s) loaded`;
+
+    const maxRound = Math.max(1, ...state.rounds.map(r => r.round_num));
+    const slider = document.getElementById("roundSlider");
+    slider.max = maxRound;
+    if (state.selectedRound > maxRound) state.selectedRound = maxRound;
+    if (!slider.dataset.userMoved) { slider.value = maxRound; state.selectedRound = maxRound; }
+    document.getElementById("roundLabel").textContent = `${state.selectedRound} / ${maxRound}`;
+
+    updateCharts();
+    updateTimeline();
+    await updateForSelectedRound();
+  } catch (e) {
+    document.getElementById("dbStatus").textContent = "error loading run.db: " + e.message;
+  }
+}
+
+document.getElementById("roundSlider").addEventListener("input", async (e) => {
+  e.target.dataset.userMoved = "1";
+  state.selectedRound = parseInt(e.target.value, 10);
+  document.getElementById("roundLabel").textContent = `${state.selectedRound} / ${e.target.max}`;
+  await updateForSelectedRound();
+});
+
+initCharts();
+refresh();
+setInterval(() => { if (document.getElementById("autoRefresh").checked) refresh(); }, 2000);
+</script>
+</body>
+</html>

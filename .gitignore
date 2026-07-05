@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+!data/golden_run.db
+.pytest_cache/

@@ -1,0 +1,26 @@
+{
+  "timestamp": 1690000000000,
+  "formatVersion": 1,
+  "webaclId": "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/demo-web-acl/aaaa-bbbb",
+  "terminatingRuleId": "block-sqli-01",
+  "terminatingRuleType": "REGULAR",
+  "action": "BLOCK",
+  "nonTerminatingMatchingRules": [
+    { "ruleId": "count-suspicious-ua", "action": "COUNT" }
+  ],
+  "labels": [
+    { "name": "awswaf:custom:sqli-suspect" }
+  ],
+  "httpRequest": {
+    "clientIp": "203.0.113.5",
+    "country": "US",
+    "headers": [
+      { "name": "Host", "value": "example.com" },
+      { "name": "User-Agent", "value": "curl/8.0" }
+    ],
+    "uri": "/login",
+    "args": "user=admin&pass=%27%20OR%201%3D1--",
+    "httpMethod": "POST",
+    "requestId": "11111111-2222-3333-4444-555555555555"
+  }
+}
