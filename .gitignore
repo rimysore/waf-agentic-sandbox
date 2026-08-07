@@ -4,3 +4,5 @@ __pycache__/
 data/*.db
 !data/golden_run.db
 .pytest_cache/
+.vercel
+.deepeval/

@@ -150,6 +150,7 @@ class OrchestratorLoop:
             "fp_rate": fp_rate,
             "wcu_used": wcu_used,
             "defender_actions": [a["event"] + ":" + a["rule_name"] for a in defender_tools.actions_taken],
+            "defender_actions_detail": list(defender_tools.actions_taken),
             "auto_rollbacks": [rb.rule_name for rb in rolled_back],
         }
         return summary

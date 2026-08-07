@@ -62,6 +62,7 @@ class DefenderTools:
         fp_rate = promotion.compute_fp_rate(
             rule, self.legit_requests, self.engine_state.ip_sets, self.engine_state.regex_sets
         )
+        self.actions_taken.append({"event": "replayed", "rule_name": rule_name, "detail": {"fp_rate": fp_rate}})
         return {"rule_name": rule_name, "fp_rate": fp_rate, "threshold": self.fp_threshold}
 
     def promote_rule(self, rule_name: str) -> dict:
